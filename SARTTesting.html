@@ -1,0 +1,232 @@
+// Main asynchronous function for test
+async function startTest() {
+  // Create test figure (f2) with timer and progress bar
+  let [f2, timerDiv, progressBar] = createTestFigure();
+  
+  // Record test parameters for the first test
+  testHistory.push({
+    testType: TestType, 
+    feedbackType: FeedbackType
+  });
+  
+  // Outer loop: for loop = 1:2
+  for (let loop = 1; loop <= 2; loop++) {
+    // Start the timer for this test
+    testStartTime = performance.now();
+    let testComplete = false;
+    let i = 0; // Trial counter
+    
+    timerInterval = setInterval(() => {
+      let remainingTime = updateTimer(timerDiv, progressBar, loop);
+      if (remainingTime <= 0 && !testComplete) {
+        testComplete = true;
+      }
+    }, 100);
+
+    while (!testComplete) {
+      oError = 0;
+      cError = 0;
+      
+      // Check if we've been running for at least 60 seconds
+      let elapsedTime = (performance.now() - testStartTime) / 1000;
+      if (elapsedTime >= 60) {
+        testComplete = true;
+        break;
+      }
+      
+      // Generate random stimuli if needed
+      let randstim = [];
+      if (TestType === 0) {
+        for (let j = 0; j < TRIALS_PER_TEST*2; j++) { // Generate more to be safe
+          randstim.push(Math.floor(Math.random() * 9) + 1);
+        }
+      }
+      
+      // Decide which list to use - ensure we don't go out of bounds
+      let currentstim;
+      if (TestType === 1) {
+        currentstim = seqstim[i % seqstim.length]; // Use modulo to wrap around
+      } else {
+        currentstim = randstim[i];
+      }
+      
+      console.log(currentstim);
+      currentStimValue = currentstim;
+
+      // Clear and update f2 content, but keep the test info and timer
+      let testInfoDiv = f2.querySelector(".test-info");
+      let timerDivCurrent = f2.querySelector(".timer");
+      let progressBarCurrent = f2.querySelector(".progress-bar");
+      f2.innerHTML = "";
+      f2.appendChild(testInfoDiv); // Add back the test info
+      f2.appendChild(timerDivCurrent); // Add back the timer
+      f2.appendChild(progressBarCurrent); // Add back the progress bar
+      
+      let stimText = document.createElement("div");
+      stimText.className = "stim-text";
+      stimText.innerText = currentstim.toString();
+      f2.appendChild(stimText);
+      f2.focus(); // Ensure f2 has focus for keyboard events
+
+      // Reset response capture state
+      responseCaptured = false;
+      ticTime = performance.now();
+      
+      // Wait for stimulus time
+      await delay(StimTime * 1000);
+      
+      // Continue checking for response until timeout
+      let timeout = 1.15; // in seconds
+      let checkInterval = 10; // milliseconds between checks
+      
+      while (!responseCaptured && ((performance.now() - ticTime) / 1000) < timeout) {
+        await delay(checkInterval);
+      }
+      
+      // Calculate response time or mark as NaN if timed out
+      if (!responseCaptured || ((performance.now() - ticTime) / 1000) >= timeout) {
+        responseTime = NaN;
+      } else {
+        responseTime = (performance.now() - ticTime) / 1000;
+      }
+
+      // Determine correct response
+      if (currentstim === 3) {
+        if (responseCaptured) {
+          correctResponse = 0;
+          cError = 1;
+        } else {
+          correctResponse = 1;
+        }
+      } else {
+        if (responseCaptured) {
+          correctResponse = 1;
+        } else {
+          correctResponse = 0;
+          oError = 1;
+        }
+      }
+      
+      // Provide feedback if enabled
+      if (FeedbackType === 1) {
+        f2.style.backgroundColor = correctResponse === 1 ? "green" : "red";
+        await delay(200);
+        f2.style.backgroundColor = "black";
+      }
+
+      // Record results row
+      let newRow = [PatientID, null, FeedbackType, TestType, i+1, currentstim, 
+                   isNaN(responseTime) ? "NaN" : responseTime, correctResponse, oError, cError];
+      T.push(newRow);
+      
+      // Increment trial counter
+      i++;
+    }
+
+    // Stop the timer and cleanup for this test
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    if (loop === 1) {
+      // 30-second break with warning
+      removeTestEventListeners(); // Remove event listeners during break
+      
+      // Create break figure
+      let f3 = document.createElement("div");
+      f3.id = "f3";
+      f3.className = "figure";
+      f3.style.left = figLeft + "px";
+      f3.style.top = figTop + "px";
+      f3.style.width = figWidth + "px";
+      f3.style.height = figHeight + "px";
+      f3.style.backgroundColor = "black";
+      f3.style.zIndex = 1100;
+      
+      let breakText = document.createElement("div");
+      breakText.className = "instruction-text";
+      breakText.style.fontSize = "28px";
+      breakText.innerText = "Test " + loop + " complete. Taking a short break...";
+      
+      // Add a timer for the break
+      let breakTimerDiv = document.createElement("div");
+      breakTimerDiv.className = "instruction-text";
+      breakTimerDiv.style.fontSize = "20px";
+      breakTimerDiv.style.marginTop = "20px";
+      breakTimerDiv.innerText = "30s remaining";
+      
+      f3.appendChild(breakText);
+      f3.appendChild(breakTimerDiv);
+      document.body.appendChild(f3);
+      
+      // Countdown for break
+      for (let i = 30; i > 5; i--) {
+        breakTimerDiv.innerText = i + "s remaining";
+        await delay(1000);
+      }
+      
+      // 5 second warning
+      breakText.innerText = "Resuming in 5 seconds";
+      
+      for (let i = 5; i > 0; i--) {
+        breakTimerDiv.innerText = i + "s remaining";
+        await delay(1000);
+      }
+      
+      document.body.removeChild(f3);
+      
+      // Randomize test parameters again for second test
+      randomizeTestParameters();
+      
+      // Record test parameters for the second test
+      testHistory.push({
+        testType: TestType, 
+        feedbackType: FeedbackType
+      });
+      
+      // Recreate test figure and reattach event listeners
+      document.body.removeChild(f2);
+      [f2, timerDiv, progressBar] = createTestFigure();
+    }
+  }
+  
+  // Stop the timer and cleanup
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  
+  // Thank you screen
+  removeTestEventListeners();
+  
+  let f5 = document.createElement("div");
+  f5.id = "f5";
+  f5.className = "figure";
+  f5.style.left = figLeft + "px";
+  f5.style.top = figTop + "px";
+  f5.style.width = figWidth + "px";
+  f5.style.height = figHeight + "px";
+  f5.style.backgroundColor = "black";
+  f5.style.zIndex = 1200;
+  
+  let thankYouText = document.createElement("div");
+  thankYouText.className = "instruction-text";
+  thankYouText.style.fontSize = "28px";
+  thankYouText.innerText = "Thank you for participating!";
+  
+  f5.appendChild(thankYouText);
+  document.body.appendChild(f5);
+  
+  console.log("Patient Results Table:");
+  console.table(T);
+  
+  await delay(2000); // Show thank you message for 2 seconds
+  
+  // Remove thank you screen and show results
+  document.body.removeChild(f5);
+  document.body.removeChild(f2);
+  
+  // Show results screen
+  createResultsScreen();
+}
